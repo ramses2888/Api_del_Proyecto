@@ -1,0 +1,433 @@
+USE master;
+GO
+
+IF DB_ID('VisiCartDB') IS NULL
+BEGIN
+    CREATE DATABASE VisiCartDB;
+END
+GO
+
+USE VisiCartDB;
+GO
+
+-- =============================================
+-- 1. TABLAS (NORMALIZADAS EN 3FN)
+-- =============================================
+
+CREATE TABLE Categorias (
+    IdCategoria INT PRIMARY KEY IDENTITY(1,1),
+    NombreCat VARCHAR(100) NOT NULL,
+    DescripcionCat VARCHAR(255) NULL
+);
+GO
+
+CREATE TABLE Productos (
+    IdProducto INT PRIMARY KEY IDENTITY(1,1),
+    Nombre VARCHAR(120) NOT NULL,
+    PrecioCatalogo DECIMAL(10,2) NOT NULL,
+    PesoEsperado FLOAT NOT NULL,
+    IdCategoria INT NOT NULL,
+    CONSTRAINT CHK_Productos_PrecioPos CHECK (PrecioCatalogo > 0),
+    CONSTRAINT CHK_Productos_PesoPos CHECK (PesoEsperado > 0),
+    CONSTRAINT FK_Productos_Categorias FOREIGN KEY (IdCategoria)
+        REFERENCES Categorias(IdCategoria)
+        ON UPDATE CASCADE
+        ON DELETE NO ACTION
+);
+GO
+
+CREATE TABLE Clientes (
+    IdCliente INT PRIMARY KEY IDENTITY(1,1),
+    Nombre VARCHAR(100) NOT NULL,
+    Email VARCHAR(150) NOT NULL UNIQUE,
+    Telefono VARCHAR(20) NULL,
+    Calle VARCHAR(100) NULL,
+    Ciudad VARCHAR(50) NULL
+);
+GO
+
+CREATE TABLE CarritosInteligentes (
+    IdCarrito INT PRIMARY KEY IDENTITY(1,1),
+    EstadoBateria FLOAT NOT NULL,
+    EstadoOperativo VARCHAR(20) NOT NULL, -- DISPONIBLE, EN_USO, MANTENIMIENTO, FUERA_SERVICIO
+    IdCliente INT NULL,
+    CONSTRAINT CHK_Carritos_BateriaRango CHECK (EstadoBateria BETWEEN 0 AND 100),
+    CONSTRAINT FK_Carritos_Clientes FOREIGN KEY (IdCliente)
+        REFERENCES Clientes(IdCliente)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL
+);
+GO
+
+CREATE TABLE PersonalTienda (
+    IdEmpleado INT PRIMARY KEY IDENTITY(1,1),
+    Nombre VARCHAR(100) NOT NULL,
+    Rol VARCHAR(50) NOT NULL
+);
+GO
+
+CREATE TABLE Transacciones (
+    IdTransaccion INT PRIMARY KEY IDENTITY(1,1),
+    Fecha DATETIME NOT NULL DEFAULT GETDATE(),
+    TotalNeto DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    IdCliente INT NOT NULL,
+    IdEmpleado INT NULL,
+    CONSTRAINT CHK_Transacciones_TotalPos CHECK (TotalNeto >= 0),
+    CONSTRAINT FK_Transacciones_Clientes FOREIGN KEY (IdCliente)
+        REFERENCES Clientes(IdCliente)
+        ON UPDATE CASCADE
+        ON DELETE NO ACTION,
+    CONSTRAINT FK_Transacciones_Personal FOREIGN KEY (IdEmpleado)
+        REFERENCES PersonalTienda(IdEmpleado)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL
+);
+GO
+
+CREATE TABLE DetalleTransaccion (
+    IdTransaccion INT NOT NULL,
+    IdProducto INT NOT NULL,
+    Cantidad INT NOT NULL,
+    PrecioVentaUnitario DECIMAL(10,2) NOT NULL,
+    PRIMARY KEY (IdTransaccion, IdProducto),
+    CONSTRAINT CHK_Detalle_CantidadPos CHECK (Cantidad > 0),
+    CONSTRAINT CHK_Detalle_PrecioVentaPos CHECK (PrecioVentaUnitario >= 0),
+    CONSTRAINT FK_Detalle_Transacciones FOREIGN KEY (IdTransaccion)
+        REFERENCES Transacciones(IdTransaccion)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+    CONSTRAINT FK_Detalle_Productos FOREIGN KEY (IdProducto)
+        REFERENCES Productos(IdProducto)
+        ON UPDATE CASCADE
+        ON DELETE NO ACTION
+);
+GO
+
+CREATE TABLE Facturas (
+    NroFactura VARCHAR(20) PRIMARY KEY,
+    FechaEmision DATETIME NOT NULL DEFAULT GETDATE(),
+    ValorFinal DECIMAL(10,2) NOT NULL,
+    MetodoPago VARCHAR(50) NOT NULL,
+    IdTransaccion INT NOT NULL UNIQUE,
+    CONSTRAINT CHK_Facturas_ValorPos CHECK (ValorFinal >= 0),
+    CONSTRAINT FK_Facturas_Transacciones FOREIGN KEY (IdTransaccion)
+        REFERENCES Transacciones(IdTransaccion)
+        ON UPDATE CASCADE
+        ON DELETE NO ACTION
+);
+GO
+
+CREATE TABLE Alertas (
+    IdAlerta INT PRIMARY KEY IDENTITY(1,1),
+    FechaHora DATETIME NOT NULL DEFAULT GETDATE(),
+    TipoDiscrepancia VARCHAR(100) NOT NULL,
+    IdCarrito INT NOT NULL,
+    CONSTRAINT FK_Alertas_Carritos FOREIGN KEY (IdCarrito)
+        REFERENCES CarritosInteligentes(IdCarrito)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+);
+GO
+
+-- =============================================
+-- 2. PROCEDIMIENTOS ALMACENADOS - PRODUCTOS
+-- =============================================
+
+CREATE PROCEDURE [dbo].[sp_RegistrarProducto]
+    @Nombre VARCHAR(120),
+    @PrecioCatalogo DECIMAL(10,2),
+    @PesoEsperado FLOAT,
+    @IdCategoria INT
+AS
+BEGIN
+    INSERT INTO Productos (Nombre, PrecioCatalogo, PesoEsperado, IdCategoria)
+    VALUES (@Nombre, @PrecioCatalogo, @PesoEsperado, @IdCategoria);
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ListarProductos]
+AS
+BEGIN
+    SELECT p.IdProducto,
+           p.Nombre,
+           p.PrecioCatalogo,
+           p.PesoEsperado,
+           p.IdCategoria,
+           c.NombreCat
+    FROM Productos p
+    INNER JOIN Categorias c ON p.IdCategoria = c.IdCategoria
+    ORDER BY p.IdProducto DESC;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ObtenerProductoPorId]
+    @IdProducto INT
+AS
+BEGIN
+    SELECT IdProducto, Nombre, PrecioCatalogo, PesoEsperado, IdCategoria
+    FROM Productos
+    WHERE IdProducto = @IdProducto;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ActualizarProducto]
+    @IdProducto INT,
+    @Nombre VARCHAR(120),
+    @PrecioCatalogo DECIMAL(10,2),
+    @PesoEsperado FLOAT,
+    @IdCategoria INT
+AS
+BEGIN
+    UPDATE Productos
+    SET Nombre = @Nombre,
+        PrecioCatalogo = @PrecioCatalogo,
+        PesoEsperado = @PesoEsperado,
+        IdCategoria = @IdCategoria
+    WHERE IdProducto = @IdProducto;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_EliminarProducto]
+    @IdProducto INT
+AS
+BEGIN
+    DELETE FROM Productos
+    WHERE IdProducto = @IdProducto;
+END
+GO
+
+-- =============================================
+-- 3. PROCEDIMIENTOS ALMACENADOS - CLIENTES
+-- =============================================
+
+CREATE PROCEDURE [dbo].[sp_RegistrarCliente]
+    @Nombre VARCHAR(100),
+    @Email VARCHAR(150),
+    @Telefono VARCHAR(20) = NULL,
+    @Calle VARCHAR(100) = NULL,
+    @Ciudad VARCHAR(50) = NULL
+AS
+BEGIN
+    INSERT INTO Clientes (Nombre, Email, Telefono, Calle, Ciudad)
+    VALUES (@Nombre, @Email, @Telefono, @Calle, @Ciudad);
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ListarClientes]
+AS
+BEGIN
+    SELECT IdCliente, Nombre, Email, Telefono, Calle, Ciudad
+    FROM Clientes
+    ORDER BY IdCliente DESC;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ObtenerClientePorId]
+    @IdCliente INT
+AS
+BEGIN
+    SELECT IdCliente, Nombre, Email, Telefono, Calle, Ciudad
+    FROM Clientes
+    WHERE IdCliente = @IdCliente;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ActualizarCliente]
+    @IdCliente INT,
+    @Nombre VARCHAR(100),
+    @Email VARCHAR(150),
+    @Telefono VARCHAR(20) = NULL,
+    @Calle VARCHAR(100) = NULL,
+    @Ciudad VARCHAR(50) = NULL
+AS
+BEGIN
+    UPDATE Clientes
+    SET Nombre = @Nombre,
+        Email = @Email,
+        Telefono = @Telefono,
+        Calle = @Calle,
+        Ciudad = @Ciudad
+    WHERE IdCliente = @IdCliente;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_EliminarCliente]
+    @IdCliente INT
+AS
+BEGIN
+    DELETE FROM Clientes
+    WHERE IdCliente = @IdCliente;
+END
+GO
+
+-- =============================================
+-- 4. PROCEDIMIENTOS ALMACENADOS - CARRITOS Y ALERTAS
+-- =============================================
+
+CREATE PROCEDURE [dbo].[sp_RegistrarCarrito]
+    @EstadoBateria FLOAT,
+    @EstadoOperativo VARCHAR(20),
+    @IdCliente INT = NULL
+AS
+BEGIN
+    INSERT INTO CarritosInteligentes (EstadoBateria, EstadoOperativo, IdCliente)
+    VALUES (@EstadoBateria, @EstadoOperativo, @IdCliente);
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ListarCarritos]
+AS
+BEGIN
+    SELECT IdCarrito, EstadoBateria, EstadoOperativo, IdCliente
+    FROM CarritosInteligentes
+    ORDER BY IdCarrito DESC;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ObtenerCarritoPorId]
+    @IdCarrito INT
+AS
+BEGIN
+    SELECT IdCarrito, EstadoBateria, EstadoOperativo, IdCliente
+    FROM CarritosInteligentes
+    WHERE IdCarrito = @IdCarrito;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ActualizarCarrito]
+    @IdCarrito INT,
+    @EstadoBateria FLOAT,
+    @EstadoOperativo VARCHAR(20),
+    @IdCliente INT = NULL
+AS
+BEGIN
+    UPDATE CarritosInteligentes
+    SET EstadoBateria = @EstadoBateria,
+        EstadoOperativo = @EstadoOperativo,
+        IdCliente = @IdCliente
+    WHERE IdCarrito = @IdCarrito;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_EliminarCarrito]
+    @IdCarrito INT
+AS
+BEGIN
+    DELETE FROM CarritosInteligentes
+    WHERE IdCarrito = @IdCarrito;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_RegistrarAlertaCarrito]
+    @IdCarrito INT,
+    @TipoDiscrepancia VARCHAR(100)
+AS
+BEGIN
+    INSERT INTO Alertas (FechaHora, TipoDiscrepancia, IdCarrito)
+    VALUES (GETDATE(), @TipoDiscrepancia, @IdCarrito);
+END
+GO
+
+-- =============================================
+-- 5. PROCEDIMIENTOS ALMACENADOS - TRANSACCIONES Y FACTURAS
+-- =============================================
+
+CREATE PROCEDURE [dbo].[sp_CrearTransaccion]
+    @IdCliente INT,
+    @IdEmpleado INT = NULL
+AS
+BEGIN
+    INSERT INTO Transacciones (Fecha, TotalNeto, IdCliente, IdEmpleado)
+    VALUES (GETDATE(), 0.00, @IdCliente, @IdEmpleado);
+
+    SELECT SCOPE_IDENTITY() AS IdTransaccion;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_AgregarProductoTransaccion]
+    @IdTransaccion INT,
+    @IdProducto INT,
+    @Cantidad INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @PrecioActual DECIMAL(10,2);
+    SELECT @PrecioActual = PrecioCatalogo
+    FROM Productos
+    WHERE IdProducto = @IdProducto;
+
+    IF @PrecioActual IS NULL
+    BEGIN
+        RAISERROR('El producto especificado no existe.', 16, 1);
+        RETURN;
+    END
+
+    IF EXISTS (
+        SELECT 1 FROM DetalleTransaccion
+        WHERE IdTransaccion = @IdTransaccion AND IdProducto = @IdProducto
+    )
+    BEGIN
+        UPDATE DetalleTransaccion
+        SET Cantidad = Cantidad + @Cantidad,
+            PrecioVentaUnitario = @PrecioActual
+        WHERE IdTransaccion = @IdTransaccion AND IdProducto = @IdProducto;
+    END
+    ELSE
+    BEGIN
+        INSERT INTO DetalleTransaccion (IdTransaccion, IdProducto, Cantidad, PrecioVentaUnitario)
+        VALUES (@IdTransaccion, @IdProducto, @Cantidad, @PrecioActual);
+    END
+
+    UPDATE Transacciones
+    SET TotalNeto = (
+        SELECT ISNULL(SUM(Cantidad * PrecioVentaUnitario), 0)
+        FROM DetalleTransaccion
+        WHERE IdTransaccion = @IdTransaccion
+    )
+    WHERE IdTransaccion = @IdTransaccion;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ListarTransacciones]
+AS
+BEGIN
+    SELECT IdTransaccion, Fecha, TotalNeto, IdCliente, IdEmpleado
+    FROM Transacciones
+    ORDER BY IdTransaccion DESC;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_ObtenerTransaccionPorId]
+    @IdTransaccion INT
+AS
+BEGIN
+    SELECT IdTransaccion, Fecha, TotalNeto, IdCliente, IdEmpleado
+    FROM Transacciones
+    WHERE IdTransaccion = @IdTransaccion;
+END
+GO
+
+CREATE PROCEDURE [dbo].[sp_EmitirFactura]
+    @NroFactura VARCHAR(20),
+    @IdTransaccion INT,
+    @MetodoPago VARCHAR(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @TotalTransaccion DECIMAL(10,2);
+    SELECT @TotalTransaccion = TotalNeto
+    FROM Transacciones
+    WHERE IdTransaccion = @IdTransaccion;
+
+    IF @TotalTransaccion IS NULL
+    BEGIN
+        RAISERROR('La transaccion indicada no existe.', 16, 1);
+        RETURN;
+    END
+
+    INSERT INTO Facturas (NroFactura, FechaEmision, ValorFinal, MetodoPago, IdTransaccion)
+    VALUES (@NroFactura, GETDATE(), @TotalTransaccion, @MetodoPago, @IdTransaccion);
+END
+GO

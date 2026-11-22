@@ -1,0 +1,31 @@
+BASE URL: https://localhost:7297
+
+[PRODUCTOS]
+POST   /api/Productos
+GET    /api/Productos
+PUT    /api/Productos/{id}
+DELETE /api/Productos/{id}
+
+Body ejemplo POST / PUT Productos:
+{
+  "nombre": "Leche Entera 1L",
+  "precioCatalogo": 4200.00,
+  "pesoEsperado": 1.02,
+  "idCategoria": 1
+}
+
+[CLIENTES]
+POST   /api/Clientes
+GET    /api/Clientes
+GET    /api/Clientes/{id}
+PUT    /api/Clientes/{id}
+DELETE /api/Clientes/{id}
+
+Body ejemplo POST / PUT Clientes:
+{
+  "nombre": "Ana Maria Gomez",
+  "email": "ana.gomez.test@correo.com",
+  "telefono": "3001234567",
+  "calle": "Calle 45 # 12-30",
+  "ciudad": "Bogota"
+}
